@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "535429957906",
+    "project_id": "dint-428310",
+    "storage_bucket": "dint-428310.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:535429957906:android:3cc23c94e4e2179f4f4bcb",
+        "android_client_info": {
+          "package_name": "com.dint.society"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDWTWBZrItZ7ZvQBUUMnHk3JjiHE2XOrdg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,580 @@
+diff --git a/node_modules/react-native-video/android/build.gradle b/node_modules/react-native-video/android/build.gradle
+index 7920bf6..5492c66 100644
+--- a/node_modules/react-native-video/android/build.gradle
++++ b/node_modules/react-native-video/android/build.gradle
+@@ -5,6 +5,21 @@ apply plugin: 'kotlin-android'
+ 
+ buildscript {
+     def kotlin_version = rootProject.ext.has('kotlinVersion') ? rootProject.ext.get('kotlinVersion') : project.properties['RNVideo_kotlinVersion']
++    def requiredKotlinVersion = project.properties['RNVideo_kotlinVersion']
++
++    def isVersionAtLeast = { version, requiredVersion ->
++        def (v1, v2) = [version, requiredVersion].collect { it.tokenize('.')*.toInteger() }
++        for (int i = 0; i < Math.max(v1.size(), v2.size()); i++) {
++            int val1 = i < v1.size() ? v1[i] : 0
++            int val2 = i < v2.size() ? v2[i] : 0
++            if (val1 < val2) {
++                return false
++            } else if (val1 > val2) {
++                return true
++            }
++        }
++        return true
++    }
+ 
+     repositories {
+         mavenCentral()
+@@ -13,6 +28,14 @@ buildscript {
+     dependencies {
+         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version")
+     }
++
++    ext {
++        if (!isVersionAtLeast(kotlin_version, requiredKotlinVersion)) {
++            throw new GradleException("Kotlin version mismatch: Project is using Kotlin version $kotlin_version, but it must be at least $requiredKotlinVersion. Please update the Kotlin version.")
++        } else {
++            println("Kotlin version is correct: $kotlin_version")
++        }
++    }
+ }
+ 
+ // This looks funny but it's necessary to keep backwards compatibility (:
+@@ -184,7 +207,6 @@ repositories {
+ }
+ 
+ def media3_version = safeExtGet('media3Version')
+-def kotlin_version = safeExtGet('kotlinVersion')
+ def androidxCore_version = safeExtGet('androidxCoreVersion')
+ def androidxActivity_version = safeExtGet('androidxActivityVersion')
+ 
+@@ -280,5 +302,4 @@ dependencies {
+         // Common functionality used across multiple media libraries
+         implementation "androidx.media3:media3-common:$media3_version"
+     }
+-    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+ }
+\ No newline at end of file
+diff --git a/node_modules/react-native-video/android/gradle.properties b/node_modules/react-native-video/android/gradle.properties
+index d4b2316..46daceb 100644
+--- a/node_modules/react-native-video/android/gradle.properties
++++ b/node_modules/react-native-video/android/gradle.properties
+@@ -1,4 +1,4 @@
+-RNVideo_kotlinVersion=1.7.0
++RNVideo_kotlinVersion=1.8.0
+ RNVideo_minSdkVersion=23
+ RNVideo_targetSdkVersion=34
+ RNVideo_compileSdkVersion=34
+diff --git a/node_modules/react-native-video/android/src/main/java/com/brentvatne/common/react/VideoEventEmitter.kt b/node_modules/react-native-video/android/src/main/java/com/brentvatne/common/react/VideoEventEmitter.kt
+index 8f29779..b227bfc 100644
+--- a/node_modules/react-native-video/android/src/main/java/com/brentvatne/common/react/VideoEventEmitter.kt
++++ b/node_modules/react-native-video/android/src/main/java/com/brentvatne/common/react/VideoEventEmitter.kt
+@@ -48,7 +48,7 @@ enum class EventTypes(val eventName: String) {
+         fun toMap() =
+             mutableMapOf<String, Any>().apply {
+                 EventTypes.values().toList().forEach { eventType ->
+-                    put("top${eventType.eventName.removePrefix("on")}", mapOf("registrationName" to eventType.eventName))
++                    put("top${eventType.eventName.removePrefix("on")}", hashMapOf("registrationName" to eventType.eventName))
+                 }
+             }
+     }
+diff --git a/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/AspectRatioFrameLayout.kt b/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/AspectRatioFrameLayout.kt
+index 834e5e0..c26745f 100644
+--- a/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/AspectRatioFrameLayout.kt
++++ b/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/AspectRatioFrameLayout.kt
+@@ -75,9 +75,9 @@ class AspectRatioFrameLayout(context: Context) : FrameLayout(context) {
+ 
+                 // Scale video if it doesn't fill the measuredWidth
+                 if (width < measuredWidth) {
+-                    val scaleFactor: Int = measuredWidth / width
+-                    width *= scaleFactor
+-                    height = measuredHeight * scaleFactor
++                    val scaleFactor: Float = measuredWidth.toFloat() / width
++                    width = (scaleFactor * width).toInt()
++                    height = (scaleFactor * height).toInt()
+                 }
+             }
+ 
+diff --git a/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ExoPlayerView.java b/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ExoPlayerView.java
+index d1ac522..a57b91f 100644
+--- a/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ExoPlayerView.java
++++ b/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ExoPlayerView.java
+@@ -238,12 +238,11 @@ public final class ExoPlayerView extends FrameLayout implements AdViewProvider {
+                 // There are weird cases when video height and width did not change with rotation so we need change aspect ration to fix it
+                 switch (format.rotationDegrees) {
+                     // update aspect ratio !
+-                    case 90, 270 -> {
++                    case 90:
++                    case 270:
+                         layout.setVideoAspectRatio(format.width == 0 ? 1 : (format.height * format.pixelWidthHeightRatio) / format.width);
+-                    }
+-                    default -> {
++                    default:
+                         layout.setVideoAspectRatio(format.height == 0 ? 1 : (format.width * format.pixelWidthHeightRatio) / format.height);
+-                    }
+                 }
+                 return;
+             }
+diff --git a/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/FullScreenPlayerView.kt b/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/FullScreenPlayerView.kt
+index b66c1e8..00f9397 100644
+--- a/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/FullScreenPlayerView.kt
++++ b/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/FullScreenPlayerView.kt
+@@ -91,13 +91,12 @@ class FullScreenPlayerView(
+         parent = null
+     }
+ 
+-    private fun getFullscreenIconResource(isFullscreen: Boolean): Int {
+-        return if (isFullscreen) {
++    private fun getFullscreenIconResource(isFullscreen: Boolean): Int =
++        if (isFullscreen) {
+             androidx.media3.ui.R.drawable.exo_icon_fullscreen_exit
+         } else {
+             androidx.media3.ui.R.drawable.exo_icon_fullscreen_enter
+         }
+-    }
+ 
+     private fun updateFullscreenButton(playerControlView: LegacyPlayerControlView, isFullscreen: Boolean) {
+         val imageButton = playerControlView.findViewById<ImageButton?>(com.brentvatne.react.R.id.exo_fullscreen)
+diff --git a/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ReactExoplayerView.java b/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ReactExoplayerView.java
+index 4841d5c..8ebba8c 100644
+--- a/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ReactExoplayerView.java
++++ b/node_modules/react-native-video/android/src/main/java/com/brentvatne/exoplayer/ReactExoplayerView.java
+@@ -202,6 +202,7 @@ public class ReactExoplayerView extends FrameLayout implements
+     private long resumePosition;
+     private boolean loadVideoStarted;
+     private boolean isFullscreen;
++    private boolean originalFitsSystemWindows;
+     private boolean isInBackground;
+     private boolean isPaused;
+     private boolean isBuffering;
+@@ -1590,7 +1591,7 @@ public class ReactExoplayerView extends FrameLayout implements
+         if (format.sampleMimeType != null) track.setMimeType(format.sampleMimeType);
+         if (format.language != null) track.setLanguage(format.language);
+         if (format.label != null) track.setTitle(format.label);
+-        track.setSelected(isTrackSelected(selection, group, 0));
++        track.setSelected(isTrackSelected(selection, group, trackIndex));
+         return track;
+     }
+ 
+@@ -2238,6 +2239,7 @@ public class ReactExoplayerView extends FrameLayout implements
+                 fullScreenPlayerView.show();
+             }
+             UiThreadUtil.runOnUiThread(() -> {
++                originalFitsSystemWindows = window.getDecorView().getFitsSystemWindows();
+                 WindowCompat.setDecorFitsSystemWindows(window, false);
+                 controller.hide(WindowInsetsCompat.Type.systemBars());
+                 controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+@@ -2251,7 +2253,7 @@ public class ReactExoplayerView extends FrameLayout implements
+                 setControls(controls);
+             }
+             UiThreadUtil.runOnUiThread(() -> {
+-                WindowCompat.setDecorFitsSystemWindows(window, true);
++                WindowCompat.setDecorFitsSystemWindows(window, originalFitsSystemWindows);
+                 controller.show(WindowInsetsCompat.Type.systemBars());
+                 eventEmitter.onVideoFullscreenPlayerDidDismiss.invoke();
+             });
+diff --git a/node_modules/react-native-video/android/src/main/java/com/brentvatne/receiver/BecomingNoisyListener.java b/node_modules/react-native-video/android/src/main/java/com/brentvatne/receiver/BecomingNoisyListener.java
+deleted file mode 100644
+index 6a5d37d..0000000
+--- a/node_modules/react-native-video/android/src/main/java/com/brentvatne/receiver/BecomingNoisyListener.java
++++ /dev/null
+@@ -1,13 +0,0 @@
+-package com.brentvatne.receiver;
+-
+-public interface BecomingNoisyListener {
+-
+-    BecomingNoisyListener NO_OP = new BecomingNoisyListener() {
+-        @Override public void onAudioBecomingNoisy() {
+-            // NO_OP
+-        }
+-    };
+-
+-    void onAudioBecomingNoisy();
+-
+-}
+diff --git a/node_modules/react-native-video/android/src/main/java/com/brentvatne/receiver/BecomingNoisyListener.kt b/node_modules/react-native-video/android/src/main/java/com/brentvatne/receiver/BecomingNoisyListener.kt
+new file mode 100644
+index 0000000..d967fc9
+--- /dev/null
++++ b/node_modules/react-native-video/android/src/main/java/com/brentvatne/receiver/BecomingNoisyListener.kt
+@@ -0,0 +1,12 @@
++package com.brentvatne.receiver
++
++interface BecomingNoisyListener {
++    companion object {
++        val NO_OP = object : BecomingNoisyListener {
++            override fun onAudioBecomingNoisy() {
++                // NO_OP
++            }
++        }
++    }
++    fun onAudioBecomingNoisy()
++}
+diff --git a/node_modules/react-native-video/lib/Video.js b/node_modules/react-native-video/lib/Video.js
+index b86b8de..b23bb96 100644
+--- a/node_modules/react-native-video/lib/Video.js
++++ b/node_modules/react-native-video/lib/Video.js
+@@ -32,17 +32,20 @@ const VideoNativeComponent_1 = __importDefault(require("./specs/VideoNativeCompo
+ const utils_1 = require("./utils");
+ const NativeVideoManager_1 = __importDefault(require("./specs/NativeVideoManager"));
+ const types_1 = require("./types");
+-const Video = (0, react_1.forwardRef)(({ source, style, resizeMode, posterResizeMode, poster, drm, textTracks, selectedVideoTrack, selectedAudioTrack, selectedTextTrack, useTextureView, useSecureView, viewType, shutterColor, onLoadStart, onLoad, onError, onProgress, onSeek, onEnd, onBuffer, onBandwidthUpdate, onControlsVisibilityChange, onExternalPlaybackChange, onFullscreenPlayerWillPresent, onFullscreenPlayerDidPresent, onFullscreenPlayerWillDismiss, onFullscreenPlayerDidDismiss, onReadyForDisplay, onPlaybackRateChange, onVolumeChange, onAudioBecomingNoisy, onPictureInPictureStatusChanged, onRestoreUserInterfaceForPictureInPictureStop, onReceiveAdEvent, onPlaybackStateChanged, onAudioFocusChanged, onIdle, onTimedMetadata, onAudioTracks, onTextTracks, onTextTrackDataChanged, onVideoTracks, onAspectRatio, ...rest }, ref) => {
++const Video = (0, react_1.forwardRef)(({ source, style, resizeMode, poster, posterResizeMode, renderLoader, drm, textTracks, selectedVideoTrack, selectedAudioTrack, selectedTextTrack, useTextureView, useSecureView, viewType, shutterColor, onLoadStart, onLoad, onError, onProgress, onSeek, onEnd, onBuffer, onBandwidthUpdate, onControlsVisibilityChange, onExternalPlaybackChange, onFullscreenPlayerWillPresent, onFullscreenPlayerDidPresent, onFullscreenPlayerWillDismiss, onFullscreenPlayerDidDismiss, onReadyForDisplay, onPlaybackRateChange, onVolumeChange, onAudioBecomingNoisy, onPictureInPictureStatusChanged, onRestoreUserInterfaceForPictureInPictureStop, onReceiveAdEvent, onPlaybackStateChanged, onAudioFocusChanged, onIdle, onTimedMetadata, onAudioTracks, onTextTracks, onTextTrackDataChanged, onVideoTracks, onAspectRatio, ...rest }, ref) => {
+     const nativeRef = (0, react_1.useRef)(null);
+-    const [showPoster, setShowPoster] = (0, react_1.useState)(!!poster);
++    const isPosterDeprecated = typeof poster === 'string';
++    const hasPoster = (0, react_1.useMemo)(() => {
++        if (renderLoader) {
++            return true;
++        }
++        if (isPosterDeprecated) {
++            return !!poster;
++        }
++        return !!poster?.source;
++    }, [isPosterDeprecated, poster, renderLoader]);
++    const [showPoster, setShowPoster] = (0, react_1.useState)(hasPoster);
+     const [_restoreUserInterfaceForPIPStopCompletionHandler, setRestoreUserInterfaceForPIPStopCompletionHandler,] = (0, react_1.useState)();
+-    const hasPoster = !!poster;
+-    const posterStyle = (0, react_1.useMemo)(() => ({
+-        ...react_native_1.StyleSheet.absoluteFillObject,
+-        resizeMode: posterResizeMode && posterResizeMode !== 'none'
+-            ? posterResizeMode
+-            : 'contain',
+-    }), [posterResizeMode]);
+     const src = (0, react_1.useMemo)(() => {
+         if (!source) {
+             return undefined;
+@@ -332,15 +335,60 @@ const Video = (0, react_1.forwardRef)(({ source, style, resizeMode, posterResize
+                         ? types_1.ViewType.TEXTURE
+                         : types_1.ViewType.SURFACE;
+     }, [drm, useSecureView, useTextureView, viewType]);
++    const _renderPoster = (0, react_1.useCallback)(() => {
++        if (!hasPoster || !showPoster) {
++            return null;
++        }
++        // poster resize mode
++        let _posterResizeMode = 'contain';
++        if (!isPosterDeprecated && poster?.resizeMode) {
++            _posterResizeMode = poster.resizeMode;
++        }
++        else if (posterResizeMode && posterResizeMode !== 'none') {
++            _posterResizeMode = posterResizeMode;
++        }
++        // poster style
++        const baseStyle = {
++            ...react_native_1.StyleSheet.absoluteFillObject,
++            resizeMode: _posterResizeMode,
++        };
++        let posterStyle = baseStyle;
++        if (!isPosterDeprecated && poster?.style) {
++            const styles = Array.isArray(poster.style)
++                ? poster.style
++                : [poster.style];
++            posterStyle = [baseStyle, ...styles];
++        }
++        // render poster
++        if (renderLoader && (poster || posterResizeMode)) {
++            console.warn('You provided both `renderLoader` and `poster` or `posterResizeMode` props. `renderLoader` will be used.');
++        }
++        // render loader
++        if (renderLoader) {
++            return react_1.default.createElement(react_native_1.View, { style: react_native_1.StyleSheet.absoluteFill }, renderLoader);
++        }
++        return (react_1.default.createElement(react_native_1.Image, { ...(isPosterDeprecated ? {} : poster), source: isPosterDeprecated ? { uri: poster } : poster?.source, style: posterStyle }));
++    }, [
++        hasPoster,
++        isPosterDeprecated,
++        poster,
++        posterResizeMode,
++        renderLoader,
++        showPoster,
++    ]);
++    const _style = (0, react_1.useMemo)(() => ({
++        ...react_native_1.StyleSheet.absoluteFillObject,
++        ...(showPoster ? { display: 'none' } : {}),
++    }), [showPoster]);
+     return (react_1.default.createElement(react_native_1.View, { style: style },
+-        react_1.default.createElement(VideoNativeComponent_1.default, { ref: nativeRef, ...rest, src: src, style: react_native_1.StyleSheet.absoluteFill, resizeMode: resizeMode, restoreUserInterfaceForPIPStopCompletionHandler: _restoreUserInterfaceForPIPStopCompletionHandler, textTracks: textTracks, selectedTextTrack: _selectedTextTrack, selectedAudioTrack: _selectedAudioTrack, selectedVideoTrack: _selectedVideoTrack, shutterColor: _shutterColor, onGetLicense: usingExternalGetLicense ? onGetLicense : undefined, onVideoLoad: onLoad || hasPoster
++        react_1.default.createElement(VideoNativeComponent_1.default, { ref: nativeRef, ...rest, src: src, style: _style, resizeMode: resizeMode, restoreUserInterfaceForPIPStopCompletionHandler: _restoreUserInterfaceForPIPStopCompletionHandler, textTracks: textTracks, selectedTextTrack: _selectedTextTrack, selectedAudioTrack: _selectedAudioTrack, selectedVideoTrack: _selectedVideoTrack, shutterColor: _shutterColor, onGetLicense: usingExternalGetLicense ? onGetLicense : undefined, onVideoLoad: onLoad || hasPoster
+                 ? onVideoLoad
+                 : undefined, onVideoLoadStart: onLoadStart || hasPoster ? onVideoLoadStart : undefined, onVideoError: onError ? onVideoError : undefined, onVideoProgress: onProgress ? onVideoProgress : undefined, onVideoSeek: onSeek ? onVideoSeek : undefined, onVideoEnd: onEnd, onVideoBuffer: onBuffer ? onVideoBuffer : undefined, onVideoPlaybackStateChanged: onPlaybackStateChanged ? onVideoPlaybackStateChanged : undefined, onVideoBandwidthUpdate: onBandwidthUpdate ? _onBandwidthUpdate : undefined, onTimedMetadata: onTimedMetadata ? _onTimedMetadata : undefined, onAudioTracks: onAudioTracks ? _onAudioTracks : undefined, onTextTracks: onTextTracks ? _onTextTracks : undefined, onTextTrackDataChanged: onTextTrackDataChanged ? _onTextTrackDataChanged : undefined, onVideoTracks: onVideoTracks ? _onVideoTracks : undefined, onVideoFullscreenPlayerDidDismiss: onFullscreenPlayerDidDismiss, onVideoFullscreenPlayerDidPresent: onFullscreenPlayerDidPresent, onVideoFullscreenPlayerWillDismiss: onFullscreenPlayerWillDismiss, onVideoFullscreenPlayerWillPresent: onFullscreenPlayerWillPresent, onVideoExternalPlaybackChange: onExternalPlaybackChange ? onVideoExternalPlaybackChange : undefined, onVideoIdle: onIdle, onAudioFocusChanged: onAudioFocusChanged ? _onAudioFocusChanged : undefined, onReadyForDisplay: onReadyForDisplay || hasPoster ? _onReadyForDisplay : undefined, onPlaybackRateChange: onPlaybackRateChange ? _onPlaybackRateChange : undefined, onVolumeChange: onVolumeChange ? _onVolumeChange : undefined, onVideoAudioBecomingNoisy: onAudioBecomingNoisy, onPictureInPictureStatusChanged: onPictureInPictureStatusChanged
+                 ? _onPictureInPictureStatusChanged
+                 : undefined, onRestoreUserInterfaceForPictureInPictureStop: onRestoreUserInterfaceForPictureInPictureStop, onVideoAspectRatio: onAspectRatio ? _onVideoAspectRatio : undefined, onReceiveAdEvent: onReceiveAdEvent
+                 ? _onReceiveAdEvent
+                 : undefined, onControlsVisibilityChange: onControlsVisibilityChange ? _onControlsVisibilityChange : undefined, viewType: _viewType }),
+-        hasPoster && showPoster ? (react_1.default.createElement(react_native_1.Image, { style: posterStyle, source: { uri: poster } })) : null));
++        _renderPoster()));
+ });
+ Video.displayName = 'Video';
+ exports.default = Video;
+diff --git a/node_modules/react-native-video/lib/Video.js.map b/node_modules/react-native-video/lib/Video.js.map
+index 5d5acad..0a0162b 100644
+--- a/node_modules/react-native-video/lib/Video.js.map
++++ b/node_modules/react-native-video/lib/Video.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"Video.js","sourceRoot":"","sources":["../src/Video.tsx"],"names":[],"mappings":";;;;;;;;;;;;;;;;;;;;;;;;;;;;AAAA,+CAOe;AAEf,+CAA6E;AAG7E,wFAAgE;AAqBhE,mCAIiB;AACjB,oFAA4D;AAE5D,mCAAiC;AAuBjC,MAAM,KAAK,GAAG,IAAA,kBAAU,EACtB,CACE,EACE,MAAM,EACN,KAAK,EACL,UAAU,EACV,gBAAgB,EAChB,MAAM,EACN,GAAG,EACH,UAAU,EACV,kBAAkB,EAClB,kBAAkB,EAClB,iBAAiB,EACjB,cAAc,EACd,aAAa,EACb,QAAQ,EACR,YAAY,EACZ,WAAW,EACX,MAAM,EACN,OAAO,EACP,UAAU,EACV,MAAM,EACN,KAAK,EACL,QAAQ,EACR,iBAAiB,EACjB,0BAA0B,EAC1B,wBAAwB,EACxB,6BAA6B,EAC7B,4BAA4B,EAC5B,6BAA6B,EAC7B,4BAA4B,EAC5B,iBAAiB,EACjB,oBAAoB,EACpB,cAAc,EACd,oBAAoB,EACpB,+BAA+B,EAC/B,6CAA6C,EAC7C,gBAAgB,EAChB,sBAAsB,EACtB,mBAAmB,EACnB,MAAM,EACN,eAAe,EACf,aAAa,EACb,YAAY,EACZ,sBAAsB,EACtB,aAAa,EACb,aAAa,EACb,GAAG,IAAI,EACR,EACD,GAAG,EACH,EAAE;IACF,MAAM,SAAS,GAAG,IAAA,cAAM,EAA0C,IAAI,CAAC,CAAC;IACxE,MAAM,CAAC,UAAU,EAAE,aAAa,CAAC,GAAG,IAAA,gBAAQ,EAAC,CAAC,CAAC,MAAM,CAAC,CAAC;IACvD,MAAM,CACJ,gDAAgD,EAChD,kDAAkD,EACnD,GAAG,IAAA,gBAAQ,GAAuB,CAAC;IAEpC,MAAM,SAAS,GAAG,CAAC,CAAC,MAAM,CAAC;IAE3B,MAAM,WAAW,GAAG,IAAA,eAAO,EACzB,GAAG,EAAE,CAAC,CAAC;QACL,GAAG,yBAAU,CAAC,kBAAkB;QAChC,UAAU,EACR,gBAAgB,IAAI,gBAAgB,KAAK,MAAM;YAC7C,CAAC,CAAC,gBAAgB;YAClB,CAAC,CAAC,SAAS;KAChB,CAAC,EACF,CAAC,gBAAgB,CAAC,CACnB,CAAC;IAEF,MAAM,GAAG,GAAG,IAAA,eAAO,EAAuB,GAAG,EAAE;QAC7C,IAAI,CAAC,MAAM,EAAE;YACX,OAAO,SAAS,CAAC;SAClB;QACD,MAAM,cAAc,GAAG,IAAA,kCAA0B,EAAC,MAAM,CAAC,CAAC;QAC1D,IAAI,GAAG,GAAG,cAAc,CAAC,GAAG,IAAI,EAAE,CAAC;QACnC,IAAI,GAAG,IAAI,GAAG,CAAC,KAAK,CAAC,KAAK,CAAC,EAAE;YAC3B,GAAG,GAAG,UAAU,GAAG,EAAE,CAAC;SACvB;QACD,IAAI,CAAC,GAAG,EAAE;YACR,OAAO,CAAC,GAAG,CAAC,6BAA6B,CAAC,CAAC;SAC5C;QACD,MAAM,SAAS,GAAG,CAAC,CAAC,CAAC,GAAG,IAAI,GAAG,CAAC,KAAK,CAAC,yBAAyB,CAAC,CAAC,CAAC;QAClE,MAAM,OAAO,GAAG,CAAC,CAAC,CAChB,GAAG;YACH,GAAG,CAAC,KAAK,CACP,iEAAiE,CAClE,CACF,CAAC;QAEF,MAAM,WAAW,GAAG,MAAM,CAAC,GAAG,IAAI,GAAG,CAAC;QACtC,MAAM,IAAI,GAAG,CAAC,WAAW;YACvB,CAAC,CAAC,SAAS;YACX,CAAC,CAAC;gBACE,IAAI,EAAE,WAAW,CAAC,IAAI;gBACtB,aAAa,EAAE,WAAW,CAAC,aAAa;gBACxC,OAAO,EAAE,IAAA,+BAAuB,EAAC,WAAW,CAAC,OAAO,CAAC;gBACrD,SAAS,EAAE,WAAW,CAAC,SAAS;gBAChC,cAAc,EAAE,WAAW,CAAC,cAAc;gBAC1C,iBAAiB,EAAE,WAAW,CAAC,iBAAiB;gBAChD,qBAAqB,EAAE,CAAC,CAAC,WAAW,CAAC,UAAU;gBAC/C,QAAQ,EAAE,WAAW,CAAC,QAAQ;aAC/B,CAAC;QAEN,OAAO;YACL,GAAG;YACH,SAAS;YACT,OAAO;YACP,WAAW,EAAE,cAAc,CAAC,WAAW,IAAI,KAAK;YAChD,IAAI,EAAE,cAAc,CAAC,IAAI,IAAI,EAAE;YAC/B,OAAO,EAAE,cAAc,CAAC,OAAO,IAAI,CAAC;YACpC,QAAQ,EAAE,cAAc,CAAC,QAAQ,IAAI,CAAC;YACtC,cAAc,EAAE,IAAA,+BAAuB,EAAC,cAAc,CAAC,OAAO,CAAC;YAC/D,aAAa,EAAE,cAAc,CAAC,aAAa,IAAI,CAAC,CAAC;YACjD,SAAS,EAAE,cAAc,CAAC,SAAS,IAAI,CAAC;YACxC,OAAO,EAAE,cAAc,CAAC,OAAO;YAC/B,QAAQ,EAAE,cAAc,CAAC,QAAQ;YACjC,GAAG,EAAE,IAAI;YACT,mCAAmC,EACjC,cAAc,CAAC,mCAAmC;SACrD,CAAC;IACJ,CAAC,EAAE,CAAC,GAAG,EAAE,MAAM,CAAC,CAAC,CAAC;IAElB,MAAM,kBAAkB,GAAG,IAAA,eAAO,EAAC,GAAG,EAAE;QACtC,IAAI,CAAC,iBAAiB,EAAE;YACtB,OAAO;SACR;QACD,MAAM,eAAe,GAAG,OAAO,iBAAiB,CAAC,KAAK,CAAC;QACvD,IACE,eAAe,KAAK,QAAQ;YAC5B,eAAe,KAAK,QAAQ;YAC5B,eAAe,KAAK,WAAW,EAC/B;YACA,OAAO,CAAC,IAAI,CACV,oDAAoD,EACpD,eAAe,CAChB,CAAC;YACF,OAAO;SACR;QACD,OAAO;YACL,IAAI,EAAE,iBAAiB,EAAE,IAAI;YAC7B,KAAK,EAAE,GAAG,iBAAiB,CAAC,KAAK,EAAE;SACpC,CAAC;IACJ,CAAC,EAAE,CAAC,iBAAiB,CAAC,CAAC,CAAC;IAExB,MAAM,mBAAmB,GAAG,IAAA,eAAO,EAAC,GAAG,EAAE;QACvC,IAAI,CAAC,kBAAkB,EAAE;YACvB,OAAO;SACR;QACD,MAAM,eAAe,GAAG,OAAO,kBAAkB,CAAC,KAAK,CAAC;QACxD,IACE,eAAe,KAAK,QAAQ;YAC5B,eAAe,KAAK,QAAQ;YAC5B,eAAe,KAAK,WAAW,EAC/B;YACA,OAAO,CAAC,IAAI,CACV,qDAAqD,EACrD,eAAe,CAChB,CAAC;YACF,OAAO;SACR;QAED,OAAO;YACL,IAAI,EAAE,kBAAkB,EAAE,IAAI;YAC9B,KAAK,EAAE,GAAG,kBAAkB,CAAC,KAAK,EAAE;SACrC,CAAC;IACJ,CAAC,EAAE,CAAC,kBAAkB,CAAC,CAAC,CAAC;IAEzB,MAAM,mBAAmB,GAAG,IAAA,eAAO,EAAC,GAAG,EAAE;QACvC,IAAI,CAAC,kBAAkB,EAAE;YACvB,OAAO;SACR;QACD,MAAM,eAAe,GAAG,OAAO,kBAAkB,CAAC,KAAK,CAAC;QACxD,IACE,eAAe,KAAK,QAAQ;YAC5B,eAAe,KAAK,QAAQ;YAC5B,eAAe,KAAK,WAAW,EAC/B;YACA,OAAO,CAAC,IAAI,CACV,qDAAqD,EACrD,eAAe,CAChB,CAAC;YACF,OAAO;SACR;QACD,OAAO;YACL,IAAI,EAAE,kBAAkB,EAAE,IAAI;YAC9B,KAAK,EAAE,GAAG,kBAAkB,CAAC,KAAK,EAAE;SACrC,CAAC;IACJ,CAAC,EAAE,CAAC,kBAAkB,CAAC,CAAC,CAAC;IAEzB,MAAM,IAAI,GAAG,IAAA,mBAAW,EAAC,KAAK,EAAE,IAAY,EAAE,SAAkB,EAAE,EAAE;QAClE,IAAI,KAAK,CAAC,IAAI,CAAC,IAAI,IAAI,KAAK,IAAI,EAAE;YAChC,MAAM,IAAI,KAAK,CAAC,mCAAmC,GAAG,IAAI,GAAG,GAAG,CAAC,CAAC;SACnE;QAED,IAAI,CAAC,SAAS,CAAC,OAAO,EAAE;YACtB,OAAO,CAAC,IAAI,CAAC,gCAAgC,CAAC,CAAC;YAC/C,OAAO;SACR;QAED,MAAM,gBAAgB,GAAG,GAAG,EAAE;YAC5B,4BAAkB,CAAC,OAAO,CACxB,IAAA,mBAAW,EAAC,SAAS,CAAC,EACtB,IAAI,EACJ,SAAS,IAAI,CAAC,CACf,CAAC;QACJ,CAAC,CAAC;QAEF,uBAAQ,CAAC,MAAM,CAAC;YACd,GAAG,EAAE,gBAAgB;YACrB,OAAO,EAAE,gBAAgB;YACzB,OAAO,EAAE,GAAG,EAAE;gBACZ,mDAAmD;gBACnD,SAAS,CAAC,OAAO,EAAE,cAAc,CAAC,EAAC,IAAI,EAAE,IAAI,EAAC,CAAC,CAAC;YAClD,CAAC;SACF,CAAC,EAAE,CAAC;IACP,CAAC,EAAE,EAAE,CAAC,CAAC;IAEP,MAAM,KAAK,GAAG,IAAA,mBAAW,EAAC,GAAG,EAAE;QAC7B,OAAO,4BAAkB,CAAC,sBAAsB,CAC9C,IAAA,mBAAW,EAAC,SAAS,CAAC,EACtB,IAAI,CACL,CAAC;IACJ,CAAC,EAAE,EAAE,CAAC,CAAC;IAEP,MAAM,MAAM,GAAG,IAAA,mBAAW,EAAC,GAAG,EAAE;QAC9B,OAAO,4BAAkB,CAAC,sBAAsB,CAC9C,IAAA,mBAAW,EAAC,SAAS,CAAC,EACtB,KAAK,CACN,CAAC;IACJ,CAAC,EAAE,EAAE,CAAC,CAAC;IAEP,MAAM,SAAS,GAAG,IAAA,mBAAW,EAAC,CAAC,MAAc,EAAE,EAAE;QAC/C,OAAO,4BAAkB,CAAC,YAAY,CAAC,IAAA,mBAAW,EAAC,SAAS,CAAC,EAAE,MAAM,CAAC,CAAC;IACzE,CAAC,EAAE,EAAE,CAAC,CAAC;IAEP,MAAM,aAAa,GAAG,IAAA,mBAAW,EAAC,CAAC,UAAmB,EAAE,EAAE;QACxD,OAAO,4BAAkB,CAAC,gBAAgB,CACxC,IAAA,mBAAW,EAAC,SAAS,CAAC,EACtB,UAAU,CACX,CAAC;IACJ,CAAC,EAAE,EAAE,CAAC,CAAC;IAEP,MAAM,uBAAuB,GAAG,IAAA,mBAAW,EACzC,GAAG,EAAE,CAAC,aAAa,CAAC,IAAI,CAAC,EACzB,CAAC,aAAa,CAAC,CAChB,CAAC;IAEF,MAAM,uBAAuB,GAAG,IAAA,mBAAW,EACzC,GAAG,EAAE,CAAC,aAAa,CAAC,KAAK,CAAC,EAC1B,CAAC,aAAa,CAAC,CAChB,CAAC;IAEF,MAAM,IAAI,GAAG,IAAA,mBAAW,EAAC,CAAC,OAAe,EAAE,EAAE;QAC3C,qDAAqD;QACrD,IAAI,uBAAQ,CAAC,EAAE,KAAK,KAAK,EAAE;YACzB,OAAO;SACR;QACD,8CAA8C;QAC9C,OAAO,4BAAkB,CAAC,IAAI,EAAE,CAAC,IAAA,mBAAW,EAAC,SAAS,CAAC,EAAE,OAAO,CAAC,CAAC;IACpE,CAAC,EAAE,EAAE,CAAC,CAAC;IAEP,MAAM,kBAAkB,GAAG,IAAA,mBAAW,EAAC,GAAG,EAAE;QAC1C,8CAA8C;QAC9C,OAAO,4BAAkB,CAAC,kBAAkB,CAAC,IAAA,mBAAW,EAAC,SAAS,CAAC,CAAC,CAAC;IACvE,CAAC,EAAE,EAAE,CAAC,CAAC;IAEP,MAAM,oDAAoD,GAAG,IAAA,mBAAW,EACtE,CAAC,QAAiB,EAAE,EAAE;QACpB,kDAAkD,CAAC,QAAQ,CAAC,CAAC;IAC/D,CAAC,EACD,CAAC,kDAAkD,CAAC,CACrD,CAAC;IAEF,MAAM,gBAAgB,GAAG,IAAA,mBAAW,EAClC,CAAC,CAAwC,EAAE,EAAE;QAC3C,SAAS,IAAI,aAAa,CAAC,IAAI,CAAC,CAAC;QACjC,WAAW,EAAE,CAAC,CAAC,CAAC,WAAW,CAAC,CAAC;IAC/B,CAAC,EACD,CAAC,SAAS,EAAE,WAAW,CAAC,CACzB,CAAC;IAEF,MAAM,WAAW,GAAG,IAAA,mBAAW,EAC7B,CAAC,CAAmC,EAAE,EAAE;QACtC,IAAI,uBAAQ,CAAC,EAAE,KAAK,SAAS,EAAE;YAC7B,SAAS,IAAI,aAAa,CAAC,KAAK,CAAC,CAAC;SACnC;QACD,MAAM,EAAE,CAAC,CAAC,CAAC,WAAW,CAAC,CAAC;IAC1B,CAAC,EACD,CAAC,MAAM,EAAE,SAAS,EAAE,aAAa,CAAC,CACnC,CAAC;IAEF,MAAM,YAAY,GAAG,IAAA,mBAAW,EAC9B,CAAC,CAAyC,EAAE,EAAE;QAC5C,OAAO,EAAE,CAAC,CAAC,CAAC,WAAW,CAAC,CAAC;IAC3B,CAAC,EACD,CAAC,OAAO,CAAC,CACV,CAAC;IAEF,MAAM,eAAe,GAAG,IAAA,mBAAW,EACjC,CAAC,CAAuC,EAAE,EAAE;QAC1C,UAAU,EAAE,CAAC,CAAC,CAAC,WAAW,CAAC,CAAC;IAC9B,CAAC,EACD,CAAC,UAAU,CAAC,CACb,CAAC;IAEF,MAAM,WAAW,GAAG,IAAA,mBAAW,EAC7B,CAAC,CAAmC,EAAE,EAAE;QACtC,MAAM,EAAE,CAAC,CAAC,CAAC,WAAW,CAAC,CAAC;IAC1B,CAAC,EACD,CAAC,MAAM,CAAC,CACT,CAAC;IAEF,MAAM,2BAA2B,GAAG,IAAA,mBAAW,EAC7C,CAAC,CAAmD,EAAE,EAAE;QACtD,sBAAsB,EAAE,CAAC,CAAC,CAAC,WAAW,CAAC,CAAC;IAC1C,CAAC,EACD,CAAC,sBAAsB,CAAC,CACzB,CAAC;IAEF,MAAM,aAAa,GAAG,IAAA,eAAO,EAAC,GAAG,EAAE;QACjC,MAAM,KAAK,GAAG,IAAA,2BAAY,EAAC,YAAY,CAAC,CAAC;QACzC,OAAO,OAAO,KAAK,KAAK,QAAQ,CAAC,CAAC,CAAC,KAAK,CAAC,CAAC,CAAC,SAAS,CAAC;IACvD,CAAC,EAAE,CAAC,YAAY,CAAC,CAAC,CAAC;IAEnB,eAAe;IACf,MAAM,gBAAgB,GAAG,IAAA,mBAAW,EAClC,CAAC,CAA4C,EAAE,EAAE;QAC/C,eAAe,EAAE,CAAC,CAAC,CAAC,WAAW,CAAC,CAAC;IACnC,CAAC,EACD,CAAC,eAAe,CAAC,CAClB,CAAC;IAEF,MAAM,cAAc,GAAG,IAAA,mBAAW,EAChC,CAAC,CAA0C,EAAE,EAAE;QAC7C,aAAa,EAAE,CAAC,CAAC,CAAC,WAAW,CAAC,CAAC;IACjC,CAAC,EACD,CAAC,aAAa,CAAC,CAChB,CAAC;IAEF,MAAM,aAAa,GAAG,IAAA,mBAAW,EAC/B,CAAC,CAAyC,EAAE,EAAE;QAC5C,YAAY,EAAE,CAAC,CAAC,CAAC,WAAW,CAAC,CAAC;IAChC,CAAC,EACD,CAAC,YAAY,CAAC,CACf,CAAC;IAEF,MAAM,uBAAuB,GAAG,IAAA,mBAAW,EACzC,CACE,CAAuE,EACvE,EAAE;QACF,MAAM,EAAC,GAAG,SAAS,EAAC,GAAG,CAAC,CAAC,WAAW,CAAC;QACrC,OAAO,SAAS,CAAC,MAAM,CAAC;QACxB,sBAAsB,EAAE,CAAC,SAAuC,CAAC,CAAC;IACpE,CAAC,EACD,CAAC,sBAAsB,CAAC,CACzB,CAAC;IAEF,MAAM,cAAc,GAAG,IAAA,mBAAW,EAChC,CAAC,CAA0C,EAAE,EAAE;QAC7C,aAAa,EAAE,CAAC,CAAC,CAAC,WAAW,CAAC,CAAC;IACjC,CAAC,EACD,CAAC,aAAa,CAAC,CAChB,CAAC;IAEF,MAAM,qBAAqB,GAAG,IAAA,mBAAW,EACvC,CAAC,CAAyD,EAAE,EAAE;QAC5D,oBAAoB,EAAE,CAAC,CAAC,CAAC,WAAW,CAAC,CAAC;IACxC,CAAC,EACD,CAAC,oBAAoB,CAAC,CACvB,CAAC;IAEF,MAAM,eAAe,GAAG,IAAA,mBAAW,EACjC,CAAC,CAAmD,EAAE,EAAE;QACtD,cAAc,EAAE,CAAC,CAAC,CAAC,WAAW,CAAC,CAAC;IAClC,CAAC,EACD,CAAC,cAAc,CAAC,CACjB,CAAC;IAEF,MAAM,kBAAkB,GAAG,IAAA,mBAAW,EAAC,GAAG,EAAE;QAC1C,SAAS,IAAI,aAAa,CAAC,KAAK,CAAC,CAAC;QAClC,iBAAiB,EAAE,EAAE,CAAC;IACxB,CAAC,EAAE,CAAC,aAAa,EAAE,SAAS,EAAE,iBAAiB,CAAC,CAAC,CAAC;IAElD,MAAM,gCAAgC,GAAG,IAAA,mBAAW,EAClD,CAAC,CAA4D,EAAE,EAAE;QAC/D,+BAA+B,EAAE,CAAC,CAAC,CAAC,WAAW,CAAC,CAAC;IACnD,CAAC,EACD,CAAC,+BAA+B,CAAC,CAClC,CAAC;IAEF,MAAM,oBAAoB,GAAG,IAAA,mBAAW,EACtC,CAAC,CAAgD,EAAE,EAAE;QACnD,mBAAmB,EAAE,CAAC,CAAC,CAAC,WAAW,CAAC,CAAC;IACvC,CAAC,EACD,CAAC,mBAAmB,CAAC,CACtB,CAAC;IAEF,MAAM,aAAa,GAAG,IAAA,mBAAW,EAC/B,CAAC,CAAqC,EAAE,EAAE;QACxC,QAAQ,EAAE,CAAC,CAAC,CAAC,WAAW,CAAC,CAAC;IAC5B,CAAC,EACD,CAAC,QAAQ,CAAC,CACX,CAAC;IAEF,MAAM,6BAA6B,GAAG,IAAA,mBAAW,EAC/C,CAAC,CAAqD,EAAE,EAAE;QACxD,wBAAwB,EAAE,CAAC,CAAC,CAAC,WAAW,CAAC,CAAC;IAC5C,CAAC,EACD,CAAC,wBAAwB,CAAC,CAC3B,CAAC;IAEF,MAAM,kBAAkB,GAAG,IAAA,mBAAW,EACpC,CAAC,CAA8C,EAAE,EAAE;QACjD,iBAAiB,EAAE,CAAC,CAAC,CAAC,WAAW,CAAC,CAAC;IACrC,CAAC,EACD,CAAC,iBAAiB,CAAC,CACpB,CAAC;IAEF,MAAM,iBAAiB,GAAG,IAAA,mBAAW,EACnC,CAAC,CAA6C,EAAE,EAAE;QAChD,gBAAgB,EAAE,CAAC,CAAC,CAAC,WAAW,CAAC,CAAC;IACpC,CAAC,EACD,CAAC,gBAAgB,CAAC,CACnB,CAAC;IAEF,MAAM,mBAAmB,GAAG,IAAA,mBAAW,EACrC,CAAC,CAA+C,EAAE,EAAE;QAClD,aAAa,EAAE,CAAC,CAAC,CAAC,WAAW,CAAC,CAAC;IACjC,CAAC,EACD,CAAC,aAAa,CAAC,CAChB,CAAC;IAEF,MAAM,2BAA2B,GAAG,IAAA,mBAAW,EAC7C,CAAC,CAAmD,EAAE,EAAE;QACtD,0BAA0B,EAAE,CAAC,CAAC,CAAC,WAAW,CAAC,CAAC;IAC9C,CAAC,EACD,CAAC,0BAA0B,CAAC,CAC7B,CAAC;IAEF,MAAM,uBAAuB,GAAG,GAAG,EAAE,UAAU,YAAY,QAAQ,CAAC;IAEpE,MAAM,YAAY,GAAG,IAAA,mBAAW,EAC9B,KAAK,EAAE,KAA6C,EAAE,EAAE;QACtD,IAAI,CAAC,uBAAuB,EAAE;YAC5B,OAAO;SACR;QACD,MAAM,IAAI,GAAG,KAAK,CAAC,WAAW,CAAC;QAC/B,IAAI,MAAM,CAAC;QACX,IAAI,IAAI,EAAE,SAAS,EAAE;YACnB,IAAI;gBACF,sEAAsE;gBACtE,MAAM,OAAO,GAAG,MAAM,GAAG,CAAC,UAAU,CAClC,IAAI,CAAC,SAAS,EACd,IAAI,CAAC,SAAS,EACd,IAAI,CAAC,UAAU,EACf,IAAI,CAAC,gBAAgB,CACtB,CAAC;gBACF,MAAM;oBACJ,OAAO,OAAO,KAAK,QAAQ,CAAC,CAAC,CAAC,OAAO,CAAC,CAAC,CAAC,sBAAsB,CAAC;aAClE;YAAC,MAAM;gBACN,MAAM,GAAG,aAAa,CAAC;aACxB;SACF;aAAM;YACL,MAAM,GAAG,iBAAiB,CAAC;SAC5B;QACD,IAAI,SAAS,CAAC,OAAO,EAAE;YACrB,4BAAkB,CAAC,wBAAwB,CACzC,IAAA,mBAAW,EAAC,SAAS,CAAC,EACtB,MAAM,EACN,IAAI,CAAC,gBAAgB,CACtB,CAAC;SACH;IACH,CAAC,EACD,CAAC,GAAG,EAAE,uBAAuB,CAAC,CAC/B,CAAC;IAEF,IAAA,2BAAmB,EACjB,GAAG,EACH,GAAG,EAAE,CAAC,CAAC;QACL,IAAI;QACJ,uBAAuB;QACvB,uBAAuB;QACvB,IAAI;QACJ,KAAK;QACL,MAAM;QACN,oDAAoD;QACpD,SAAS;QACT,kBAAkB;QAClB,aAAa;KACd,CAAC,EACF;QACE,IAAI;QACJ,uBAAuB;QACvB,uBAAuB;QACvB,IAAI;QACJ,KAAK;QACL,MAAM;QACN,oDAAoD;QACpD,SAAS;QACT,kBAAkB;QAClB,aAAa;KACd,CACF,CAAC;IAEF,MAAM,SAAS,GAAG,IAAA,eAAO,EAAC,GAAG,EAAE;QAC7B,MAAM,eAAe,GACnB,GAAG,KAAK,SAAS,IAAI,MAAM,CAAC,IAAI,CAAC,GAAG,CAAC,CAAC,MAAM,KAAK,CAAC,CAAC;QAErD,MAAM,kBAAkB,GACtB,eAAe,IAAI,CAAC,QAAQ,KAAK,gBAAQ,CAAC,OAAO,IAAI,cAAc,CAAC,CAAC;QAEvE,IAAI,kBAAkB,EAAE;YACtB,OAAO,CAAC,IAAI,CACV,mEAAmE,CACpE,CAAC;SACH;QACD,IAAI,aAAa,IAAI,cAAc,EAAE;YACnC,OAAO,CAAC,IAAI,CACV,0EAA0E,CAC3E,CAAC;SACH;QAED,OAAO,kBAAkB;YACvB,CAAC,CAAC,aAAa;gBACb,CAAC,CAAC,gBAAQ,CAAC,cAAc;gBACzB,CAAC,CAAC,gBAAQ,CAAC,OAAO,CAAC,0DAA0D;YAC/E,CAAC,CAAC,QAAQ;gBACV,CAAC,CAAC,QAAQ,CAAC,gCAAgC;gBAC3C,CAAC,CAAC,aAAa,CAAC,6DAA6D;oBAC7E,CAAC,CAAC,gBAAQ,CAAC,cAAc;oBACzB,CAAC,CAAC,cAAc;wBAChB,CAAC,CAAC,gBAAQ,CAAC,OAAO;wBAClB,CAAC,CAAC,gBAAQ,CAAC,OAAO,CAAC;IACvB,CAAC,EAAE,CAAC,GAAG,EAAE,aAAa,EAAE,cAAc,EAAE,QAAQ,CAAC,CAAC,CAAC;IAEnD,OAAO,CACL,8BAAC,mBAAI,IAAC,KAAK,EAAE,KAAK;QAChB,8BAAC,8BAAoB,IACnB,GAAG,EAAE,SAAS,KACV,IAAI,EACR,GAAG,EAAE,GAAG,EACR,KAAK,EAAE,yBAAU,CAAC,YAAY,EAC9B,UAAU,EAAE,UAAU,EACtB,+CAA+C,EAC7C,gDAAgD,EAElD,UAAU,EAAE,UAAU,EACtB,iBAAiB,EAAE,kBAAkB,EACrC,kBAAkB,EAAE,mBAAmB,EACvC,kBAAkB,EAAE,mBAAmB,EACvC,YAAY,EAAE,aAAa,EAC3B,YAAY,EAAE,uBAAuB,CAAC,CAAC,CAAC,YAAY,CAAC,CAAC,CAAC,SAAS,EAChE,WAAW,EACT,MAAM,IAAI,SAAS;gBACjB,CAAC,CAAE,WAAyD;gBAC5D,CAAC,CAAC,SAAS,EAEf,gBAAgB,EACd,WAAW,IAAI,SAAS,CAAC,CAAC,CAAC,gBAAgB,CAAC,CAAC,CAAC,SAAS,EAEzD,YAAY,EAAE,OAAO,CAAC,CAAC,CAAC,YAAY,CAAC,CAAC,CAAC,SAAS,EAChD,eAAe,EAAE,UAAU,CAAC,CAAC,CAAC,eAAe,CAAC,CAAC,CAAC,SAAS,EACzD,WAAW,EAAE,MAAM,CAAC,CAAC,CAAC,WAAW,CAAC,CAAC,CAAC,SAAS,EAC7C,UAAU,EAAE,KAAK,EACjB,aAAa,EAAE,QAAQ,CAAC,CAAC,CAAC,aAAa,CAAC,CAAC,CAAC,SAAS,EACnD,2BAA2B,EACzB,sBAAsB,CAAC,CAAC,CAAC,2BAA2B,CAAC,CAAC,CAAC,SAAS,EAElE,sBAAsB,EACpB,iBAAiB,CAAC,CAAC,CAAC,kBAAkB,CAAC,CAAC,CAAC,SAAS,EAEpD,eAAe,EAAE,eAAe,CAAC,CAAC,CAAC,gBAAgB,CAAC,CAAC,CAAC,SAAS,EAC/D,aAAa,EAAE,aAAa,CAAC,CAAC,CAAC,cAAc,CAAC,CAAC,CAAC,SAAS,EACzD,YAAY,EAAE,YAAY,CAAC,CAAC,CAAC,aAAa,CAAC,CAAC,CAAC,SAAS,EACtD,sBAAsB,EACpB,sBAAsB,CAAC,CAAC,CAAC,uBAAuB,CAAC,CAAC,CAAC,SAAS,EAE9D,aAAa,EAAE,aAAa,CAAC,CAAC,CAAC,cAAc,CAAC,CAAC,CAAC,SAAS,EACzD,iCAAiC,EAAE,4BAA4B,EAC/D,iCAAiC,EAAE,4BAA4B,EAC/D,kCAAkC,EAAE,6BAA6B,EACjE,kCAAkC,EAAE,6BAA6B,EACjE,6BAA6B,EAC3B,wBAAwB,CAAC,CAAC,CAAC,6BAA6B,CAAC,CAAC,CAAC,SAAS,EAEtE,WAAW,EAAE,MAAM,EACnB,mBAAmB,EACjB,mBAAmB,CAAC,CAAC,CAAC,oBAAoB,CAAC,CAAC,CAAC,SAAS,EAExD,iBAAiB,EACf,iBAAiB,IAAI,SAAS,CAAC,CAAC,CAAC,kBAAkB,CAAC,CAAC,CAAC,SAAS,EAEjE,oBAAoB,EAClB,oBAAoB,CAAC,CAAC,CAAC,qBAAqB,CAAC,CAAC,CAAC,SAAS,EAE1D,cAAc,EAAE,cAAc,CAAC,CAAC,CAAC,eAAe,CAAC,CAAC,CAAC,SAAS,EAC5D,yBAAyB,EAAE,oBAAoB,EAC/C,+BAA+B,EAC7B,+BAA+B;gBAC7B,CAAC,CAAC,gCAAgC;gBAClC,CAAC,CAAC,SAAS,EAEf,6CAA6C,EAC3C,6CAA6C,EAE/C,kBAAkB,EAAE,aAAa,CAAC,CAAC,CAAC,mBAAmB,CAAC,CAAC,CAAC,SAAS,EACnE,gBAAgB,EACd,gBAAgB;gBACd,CAAC,CAAE,iBAA+D;gBAClE,CAAC,CAAC,SAAS,EAEf,0BAA0B,EACxB,0BAA0B,CAAC,CAAC,CAAC,2BAA2B,CAAC,CAAC,CAAC,SAAS,EAEtE,QAAQ,EAAE,SAAS,GACnB;QACD,SAAS,IAAI,UAAU,CAAC,CAAC,CAAC,CACzB,8BAAC,oBAAK,IAAC,KAAK,EAAE,WAAW,EAAE,MAAM,EAAE,EAAC,GAAG,EAAE,MAAM,EAAC,GAAI,CACrD,CAAC,CAAC,CAAC,IAAI,CACH,CACR,CAAC;AACJ,CAAC,CACF,CAAC;AAEF,KAAK,CAAC,WAAW,GAAG,OAAO,CAAC;AAC5B,kBAAe,KAAK,CAAC"}
+\ No newline at end of file
++{"version":3,"file":"Video.js","sourceRoot":"","sources":["../src/Video.tsx"],"names":[],"mappings":"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"}
+\ No newline at end of file
+diff --git a/node_modules/react-native-video/lib/types/video.d.ts b/node_modules/react-native-video/lib/types/video.d.ts
+index fd99f35..75516b3 100644
+--- a/node_modules/react-native-video/lib/types/video.d.ts
++++ b/node_modules/react-native-video/lib/types/video.d.ts
+@@ -1,6 +1,7 @@
+ import type { ISO639_1 } from './language';
+ import type { ReactVideoEvents } from './events';
+-import type { StyleProp, ViewProps, ViewStyle } from 'react-native';
++import type { ImageProps, StyleProp, ViewProps, ViewStyle, ImageRequireSource, ImageURISource } from 'react-native';
++import type { ReactNode } from 'react';
+ import type VideoResizeMode from './ResizeMode';
+ import type FilterType from './FilterType';
+ import type ViewType from './ViewType';
+@@ -25,6 +26,10 @@ export type ReactVideoSourceProperties = {
+ export type ReactVideoSource = Readonly<Omit<ReactVideoSourceProperties, 'uri'> & {
+     uri?: string | NodeRequire;
+ }>;
++export type ReactVideoPosterSource = ImageURISource | ImageRequireSource;
++export type ReactVideoPoster = Omit<ImageProps, 'source'> & {
++    source?: ReactVideoPosterSource;
++};
+ export type VideoMetadata = Readonly<{
+     title?: string;
+     subtitle?: string;
+@@ -192,12 +197,14 @@ export interface ReactVideoProps extends ReactVideoEvents, ViewProps {
+     pictureInPicture?: boolean;
+     playInBackground?: boolean;
+     playWhenInactive?: boolean;
+-    poster?: string;
++    poster?: string | ReactVideoPoster;
++    /** @deprecated use **resizeMode** key in **poster** props instead */
+     posterResizeMode?: EnumValues<PosterResizeModeType>;
+     preferredForwardBufferDuration?: number;
+     preventsDisplaySleepDuringVideoPlayback?: boolean;
+     progressUpdateInterval?: number;
+     rate?: number;
++    renderLoader?: ReactNode;
+     repeat?: boolean;
+     reportBandwidth?: boolean;
+     resizeMode?: EnumValues<VideoResizeMode>;
+diff --git a/node_modules/react-native-video/lib/types/video.js.map b/node_modules/react-native-video/lib/types/video.js.map
+index 6a3386c..2cc87a2 100644
+--- a/node_modules/react-native-video/lib/types/video.js.map
++++ b/node_modules/react-native-video/lib/types/video.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"video.js","sourceRoot":"","sources":["../../src/types/video.ts"],"names":[],"mappings":";;;AAiDA,IAAY,OAKX;AALD,WAAY,OAAO;IACjB,gCAAqB,CAAA;IACrB,kCAAuB,CAAA;IACvB,gCAAqB,CAAA;IACrB,gCAAqB,CAAA;AACvB,CAAC,EALW,OAAO,uBAAP,OAAO,QAKlB;AAoBD,IAAY,qBAIX;AAJD,WAAY,qBAAqB;IAC/B,4CAAmB,CAAA;IACnB,+DAAsC,CAAA;IACtC,kEAAyC,CAAA;AAC3C,CAAC,EAJW,qBAAqB,qCAArB,qBAAqB,QAIhC;AAuBD,IAAY,iBAMX;AAND,WAAY,iBAAiB;IAC3B,sCAAiB,CAAA;IACjB,0CAAqB,CAAA;IACrB,oCAAe,CAAA;IACf,0CAAqB,CAAA;IACrB,oCAAe,CAAA;AACjB,CAAC,EANW,iBAAiB,iCAAjB,iBAAiB,QAM5B;AAOD,IAAY,sBAKX;AALD,WAAY,sBAAsB;IAChC,uCAAa,CAAA;IACb,+CAAqB,CAAA;IACrB,mDAAyB,CAAA;IACzB,yCAAe,CAAA;AACjB,CAAC,EALW,sBAAsB,sCAAtB,sBAAsB,QAKjC;AAgBD,IAAY,aAIX;AAJD,WAAY,aAAa;IACvB,gDAA+B,CAAA;IAC/B,8CAA6B,CAAA;IAC7B,iCAAgB,CAAA;AAClB,CAAC,EAJW,aAAa,6BAAb,aAAa,QAIxB;AAwCD,IAAY,yBAIX;AAJD,WAAY,yBAAyB;IACnC,wCAAW,CAAA;IACX,oDAAuB,CAAA;IACvB,kDAAqB,CAAA;AACvB,CAAC,EAJW,yBAAyB,yCAAzB,yBAAyB,QAIpC;AAED,IAAY,sBAIX;AAJD,WAAY,sBAAsB;IAChC,6CAAmB,CAAA;IACnB,2CAAiB,CAAA;IACjB,uCAAa,CAAA;AACf,CAAC,EAJW,sBAAsB,sCAAtB,sBAAsB,QAIjC;AAED,IAAY,iBAIX;AAJD,WAAY,iBAAiB;IAC3B,wCAAmB,CAAA;IACnB,gCAAW,CAAA;IACX,kCAAa,CAAA;AACf,CAAC,EAJW,iBAAiB,iCAAjB,iBAAiB,QAI5B;AAED,IAAY,oBAOX;AAPD,WAAY,oBAAoB;IAC9B,2CAAmB,CAAA;IACnB,yCAAiB,CAAA;IACjB,uCAAe,CAAA;IACf,qCAAa,CAAA;IACb,yCAAiB,CAAA;IACjB,2CAAmB,CAAA;AACrB,CAAC,EAPW,oBAAoB,oCAApB,oBAAoB,QAO/B"}
+\ No newline at end of file
++{"version":3,"file":"video.js","sourceRoot":"","sources":["../../src/types/video.ts"],"names":[],"mappings":";;;AAgEA,IAAY,OAKX;AALD,WAAY,OAAO;IACjB,gCAAqB,CAAA;IACrB,kCAAuB,CAAA;IACvB,gCAAqB,CAAA;IACrB,gCAAqB,CAAA;AACvB,CAAC,EALW,OAAO,uBAAP,OAAO,QAKlB;AAoBD,IAAY,qBAIX;AAJD,WAAY,qBAAqB;IAC/B,4CAAmB,CAAA;IACnB,+DAAsC,CAAA;IACtC,kEAAyC,CAAA;AAC3C,CAAC,EAJW,qBAAqB,qCAArB,qBAAqB,QAIhC;AAuBD,IAAY,iBAMX;AAND,WAAY,iBAAiB;IAC3B,sCAAiB,CAAA;IACjB,0CAAqB,CAAA;IACrB,oCAAe,CAAA;IACf,0CAAqB,CAAA;IACrB,oCAAe,CAAA;AACjB,CAAC,EANW,iBAAiB,iCAAjB,iBAAiB,QAM5B;AAOD,IAAY,sBAKX;AALD,WAAY,sBAAsB;IAChC,uCAAa,CAAA;IACb,+CAAqB,CAAA;IACrB,mDAAyB,CAAA;IACzB,yCAAe,CAAA;AACjB,CAAC,EALW,sBAAsB,sCAAtB,sBAAsB,QAKjC;AAgBD,IAAY,aAIX;AAJD,WAAY,aAAa;IACvB,gDAA+B,CAAA;IAC/B,8CAA6B,CAAA;IAC7B,iCAAgB,CAAA;AAClB,CAAC,EAJW,aAAa,6BAAb,aAAa,QAIxB;AAwCD,IAAY,yBAIX;AAJD,WAAY,yBAAyB;IACnC,wCAAW,CAAA;IACX,oDAAuB,CAAA;IACvB,kDAAqB,CAAA;AACvB,CAAC,EAJW,yBAAyB,yCAAzB,yBAAyB,QAIpC;AAED,IAAY,sBAIX;AAJD,WAAY,sBAAsB;IAChC,6CAAmB,CAAA;IACnB,2CAAiB,CAAA;IACjB,uCAAa,CAAA;AACf,CAAC,EAJW,sBAAsB,sCAAtB,sBAAsB,QAIjC;AAED,IAAY,iBAIX;AAJD,WAAY,iBAAiB;IAC3B,wCAAmB,CAAA;IACnB,gCAAW,CAAA;IACX,kCAAa,CAAA;AACf,CAAC,EAJW,iBAAiB,iCAAjB,iBAAiB,QAI5B;AAED,IAAY,oBAOX;AAPD,WAAY,oBAAoB;IAC9B,2CAAmB,CAAA;IACnB,yCAAiB,CAAA;IACjB,uCAAe,CAAA;IACf,qCAAa,CAAA;IACb,yCAAiB,CAAA;IACjB,2CAAmB,CAAA;AACrB,CAAC,EAPW,oBAAoB,oCAApB,oBAAoB,QAO/B"}
+\ No newline at end of file
+diff --git a/node_modules/react-native-video/src/Video.tsx b/node_modules/react-native-video/src/Video.tsx
+index f2f91f3..49ca1e9 100644
+--- a/node_modules/react-native-video/src/Video.tsx
++++ b/node_modules/react-native-video/src/Video.tsx
+@@ -8,7 +8,13 @@ import React, {
+ } from 'react';
+ import type {ElementRef} from 'react';
+ import {View, StyleSheet, Image, Platform, processColor} from 'react-native';
+-import type {StyleProp, ImageStyle, NativeSyntheticEvent} from 'react-native';
++import type {
++  StyleProp,
++  ImageStyle,
++  NativeSyntheticEvent,
++  ViewStyle,
++  ImageResizeMode,
++} from 'react-native';
+ 
+ import NativeVideoComponent from './specs/VideoNativeComponent';
+ import type {
+@@ -67,8 +73,9 @@ const Video = forwardRef<VideoRef, ReactVideoProps>(
+       source,
+       style,
+       resizeMode,
+-      posterResizeMode,
+       poster,
++      posterResizeMode,
++      renderLoader,
+       drm,
+       textTracks,
+       selectedVideoTrack,
+@@ -113,25 +120,28 @@ const Video = forwardRef<VideoRef, ReactVideoProps>(
+     ref,
+   ) => {
+     const nativeRef = useRef<ElementRef<typeof NativeVideoComponent>>(null);
+-    const [showPoster, setShowPoster] = useState(!!poster);
++
++    const isPosterDeprecated = typeof poster === 'string';
++
++    const hasPoster = useMemo(() => {
++      if (renderLoader) {
++        return true;
++      }
++
++      if (isPosterDeprecated) {
++        return !!poster;
++      }
++
++      return !!poster?.source;
++    }, [isPosterDeprecated, poster, renderLoader]);
++
++    const [showPoster, setShowPoster] = useState(hasPoster);
++
+     const [
+       _restoreUserInterfaceForPIPStopCompletionHandler,
+       setRestoreUserInterfaceForPIPStopCompletionHandler,
+     ] = useState<boolean | undefined>();
+ 
+-    const hasPoster = !!poster;
+-
+-    const posterStyle = useMemo<StyleProp<ImageStyle>>(
+-      () => ({
+-        ...StyleSheet.absoluteFillObject,
+-        resizeMode:
+-          posterResizeMode && posterResizeMode !== 'none'
+-            ? posterResizeMode
+-            : 'contain',
+-      }),
+-      [posterResizeMode],
+-    );
+-
+     const src = useMemo<VideoSrc | undefined>(() => {
+       if (!source) {
+         return undefined;
+@@ -598,13 +608,78 @@ const Video = forwardRef<VideoRef, ReactVideoProps>(
+         : ViewType.SURFACE;
+     }, [drm, useSecureView, useTextureView, viewType]);
+ 
++    const _renderPoster = useCallback(() => {
++      if (!hasPoster || !showPoster) {
++        return null;
++      }
++
++      // poster resize mode
++      let _posterResizeMode: ImageResizeMode = 'contain';
++
++      if (!isPosterDeprecated && poster?.resizeMode) {
++        _posterResizeMode = poster.resizeMode;
++      } else if (posterResizeMode && posterResizeMode !== 'none') {
++        _posterResizeMode = posterResizeMode;
++      }
++
++      // poster style
++      const baseStyle: StyleProp<ImageStyle> = {
++        ...StyleSheet.absoluteFillObject,
++        resizeMode: _posterResizeMode,
++      };
++
++      let posterStyle: StyleProp<ImageStyle> = baseStyle;
++
++      if (!isPosterDeprecated && poster?.style) {
++        const styles = Array.isArray(poster.style)
++          ? poster.style
++          : [poster.style];
++        posterStyle = [baseStyle, ...styles];
++      }
++
++      // render poster
++      if (renderLoader && (poster || posterResizeMode)) {
++        console.warn(
++          'You provided both `renderLoader` and `poster` or `posterResizeMode` props. `renderLoader` will be used.',
++        );
++      }
++
++      // render loader
++      if (renderLoader) {
++        return <View style={StyleSheet.absoluteFill}>{renderLoader}</View>;
++      }
++
++      return (
++        <Image
++          {...(isPosterDeprecated ? {} : poster)}
++          source={isPosterDeprecated ? {uri: poster} : poster?.source}
++          style={posterStyle}
++        />
++      );
++    }, [
++      hasPoster,
++      isPosterDeprecated,
++      poster,
++      posterResizeMode,
++      renderLoader,
++      showPoster,
++    ]);
++
++    const _style: StyleProp<ViewStyle> = useMemo(
++      () => ({
++        ...StyleSheet.absoluteFillObject,
++        ...(showPoster ? {display: 'none'} : {}),
++      }),
++      [showPoster],
++    );
++
+     return (
+       <View style={style}>
+         <NativeVideoComponent
+           ref={nativeRef}
+           {...rest}
+           src={src}
+-          style={StyleSheet.absoluteFill}
++          style={_style}
+           resizeMode={resizeMode}
+           restoreUserInterfaceForPIPStopCompletionHandler={
+             _restoreUserInterfaceForPIPStopCompletionHandler
+@@ -679,9 +754,7 @@ const Video = forwardRef<VideoRef, ReactVideoProps>(
+           }
+           viewType={_viewType}
+         />
+-        {hasPoster && showPoster ? (
+-          <Image style={posterStyle} source={{uri: poster}} />
+-        ) : null}
++        {_renderPoster()}
+       </View>
+     );
+   },
+diff --git a/node_modules/react-native-video/src/types/video.ts b/node_modules/react-native-video/src/types/video.ts
+index 1dbdc9f..eb075f9 100644
+--- a/node_modules/react-native-video/src/types/video.ts
++++ b/node_modules/react-native-video/src/types/video.ts
+@@ -1,6 +1,14 @@
+ import type {ISO639_1} from './language';
+ import type {ReactVideoEvents} from './events';
+-import type {StyleProp, ViewProps, ViewStyle} from 'react-native';
++import type {
++  ImageProps,
++  StyleProp,
++  ViewProps,
++  ViewStyle,
++  ImageRequireSource,
++  ImageURISource,
++} from 'react-native';
++import type {ReactNode} from 'react';
+ import type VideoResizeMode from './ResizeMode';
+ import type FilterType from './FilterType';
+ import type ViewType from './ViewType';
+@@ -34,6 +42,13 @@ export type ReactVideoSource = Readonly<
+   }
+ >;
+ 
++export type ReactVideoPosterSource = ImageURISource | ImageRequireSource;
++
++export type ReactVideoPoster = Omit<ImageProps, 'source'> & {
++  // prevents giving source in the array
++  source?: ReactVideoPosterSource;
++};
++
+ export type VideoMetadata = Readonly<{
+   title?: string;
+   subtitle?: string;
+@@ -243,12 +258,14 @@ export interface ReactVideoProps extends ReactVideoEvents, ViewProps {
+   pictureInPicture?: boolean; // iOS
+   playInBackground?: boolean;
+   playWhenInactive?: boolean; // iOS
+-  poster?: string;
++  poster?: string | ReactVideoPoster; // string is deprecated
++  /** @deprecated use **resizeMode** key in **poster** props instead */
+   posterResizeMode?: EnumValues<PosterResizeModeType>;
+   preferredForwardBufferDuration?: number; // iOS
+   preventsDisplaySleepDuringVideoPlayback?: boolean;
+   progressUpdateInterval?: number;
+   rate?: number;
++  renderLoader?: ReactNode;
+   repeat?: boolean;
+   reportBandwidth?: boolean; //Android
+   resizeMode?: EnumValues<VideoResizeMode>;
